@@ -96,34 +96,41 @@ resource "aws_dynamodb_table" "dynamo-visitorcounter" {
 
 ####################### HTTP API GATEWAY #####################
 
-
-
-
-
-
-resource "aws_apigatewayv2_api""main"{
-  name = "main"
+resource "aws_apigatewayv2_api""api-lambda-counter"{
+  name = "api-lambda-counter"
   protocol_type = "HTTP"
 }
 
 resource "aws_apigatewayv2_stage" "dev"{
-  api_id = aws_apigatewayv2_api.main.id
+  api_id = aws_apigatewayv2_api.api-lambda-counter.id
 
   name = "dev"
   auto_deploy = true
 }
 
 #integration
-resource "aws_apigatewayv2_integration" "api-lambda-counter" {
-  api_id = aws_apigatewayv2_api.main.id
+resource "aws_apigatewayv2_integration" "api-lambda" {
+  api_id = aws_apigatewayv2_api.api-lambda-counter.id
   integration_uri = aws_lambda_function.lambda-visitorcounter.invoke_arn
+  payload_format_version = "2.0"
   integration_type = "AWS_PROXY"  
   integration_method = "POST"
 }
 
 #route
-resource "aws_apigatewayv2_route" "api-lambda-get" {
-  api_id = aws_apigatewayv2_api.main.id
+resource "aws_apigatewayv2_route" "api-visitor-counter" {
+  api_id = aws_apigatewayv2_api.api-lambda-counter.id
 
-  route_key = "GET"  
+  route_key = "GET /items/{user}"
+  target = "integrations/${aws_apigatewayv2_integration.api-lambda.id}" 
 }
+
+#permissions
+resource "aws_lambda_permission" "apigw" {
+  statement_id  = "AllowAPIGatewayInvoke"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.lambda-visitorcounter.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.api-lambda-counter.execution_arn}/*/*/*"
+}
+

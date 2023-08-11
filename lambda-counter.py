@@ -1,40 +1,60 @@
 import json
 import boto3
 import os
+dynamodb = boto3.client("dynamodb")
+table_name = "db-visit-count"
 
-def lambda_handler(event: any, context: any):
-    user = event['user']
+def lambda_handler(event, context):
+    body = None
+    status_code = 200
+    headers = {
+        "Content-Type": "application/json"
+    }
     visit_count: int = 0
-    
-    #create a dynamodb client
-    dynamodb = boto3.resource("dynamodb")
-    #table_name = "db-visit-count"
-    #instead of hardcoding table name - use environment variable
-    table_name = os.environ["TABLE_NAME"]
+    try:
+        route_key = event["routeKey"]
+        
+        if route_key == "GET /items/{user}":
 
-    #create table object
-    table = dynamodb.Table(table_name)
+            #get current visit count
+            response = dynamodb.get_item(
+                TableName=table_name,
+                Key={
+                    "user": {"S": event["pathParameters"]["user"]}
+                }
+            )
 
-    #get current visit count
-    response = table.get_item(Key={"user": user})
-    if "Item" in response:
-        visit_count = response ["Item"]["count"]
+            #extract count
+            if "Item" in response:
+                visit_count = int(response.get('Item',{}).get('count',{}).get('N'))
 
-    #increment count
-    visit_count += 1
-    message = f"Hello {user}. Visit count is {visit_count}"
+            #increment count
+            visit_count += 1
+            message = f"Visit count is {visit_count}"
+            
+            #reconstruct Item 
+            item = {"user": {"S": event["pathParameters"]["user"]}, "count": {} }
+            item['count']['N'] = str(visit_count)
 
-    #write visit count back to table
-    table.put_item(Item = {"user": user, "count": visit_count})
-
-    return{
-        "message": message
+            #write visit-count back to dynamodb
+            dynamodb.put_item(
+                TableName=table_name,
+                Item = item
+            )
+            body = message
+        
+        else:
+            raise Exception(f"Unsupported route: {route_key}")
+    except Exception as e:
+        status_code = 400
+        body = str(e)
+    finally:
+        body = json.dumps(body)
+    return {
+        "statusCode": status_code,
+        "body": body,
+        "headers": headers
     }
 
-# #to test the function locally
 
-# if __name__ == "__main__":
-#     event = {"user": "aghil_local"}
-#     print(lambda_handler(event, None))
-
-
+    
